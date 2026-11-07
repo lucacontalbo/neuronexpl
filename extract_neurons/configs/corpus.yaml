@@ -1,0 +1,44 @@
+# Corpus for neuron mapping (~100M tokens total). Model-independent: the same file
+# works for Gemma 3 and Qwen3.5, but each model needs its own corpus dir (tokenizer-specific).
+# Each source is streamed from the HF Hub, tokenized with the model tokenizer and split
+# into windows of `max_len` tokens (BOS included, if the model has one).
+# `tokens` is the per-source budget.
+#
+#   format: text -> tokens(text)
+#   format: chat -> tokenizer.apply_chat_template(messages)  (the model's chat format)
+
+max_len: 1024
+min_tokens: 32          # documents shorter than this (incl. BOS) are skipped
+
+sources:
+  # --- English web (educational) : 40M -------------------------------------
+  - {label: web_en, path: HuggingFaceFW/fineweb-edu, name: sample-10BT, field: text, id_field: id, tokens: 40000000}
+
+  # --- Multilingual web : 20M ----------------------------------------------
+  - {label: web_ita, path: HuggingFaceFW/fineweb-2, name: ita_Latn, field: text, id_field: id, tokens: 2000000}
+  - {label: web_deu, path: HuggingFaceFW/fineweb-2, name: deu_Latn, field: text, id_field: id, tokens: 2000000}
+  - {label: web_fra, path: HuggingFaceFW/fineweb-2, name: fra_Latn, field: text, id_field: id, tokens: 2000000}
+  - {label: web_spa, path: HuggingFaceFW/fineweb-2, name: spa_Latn, field: text, id_field: id, tokens: 2000000}
+  - {label: web_por, path: HuggingFaceFW/fineweb-2, name: por_Latn, field: text, id_field: id, tokens: 2000000}
+  - {label: web_rus, path: HuggingFaceFW/fineweb-2, name: rus_Cyrl, field: text, id_field: id, tokens: 2000000}
+  - {label: web_cmn, path: HuggingFaceFW/fineweb-2, name: cmn_Hani, field: text, id_field: id, tokens: 2000000}
+  - {label: web_jpn, path: HuggingFaceFW/fineweb-2, name: jpn_Jpan, field: text, id_field: id, tokens: 2000000}
+  - {label: web_arb, path: HuggingFaceFW/fineweb-2, name: arb_Arab, field: text, id_field: id, tokens: 2000000}
+  - {label: web_hin, path: HuggingFaceFW/fineweb-2, name: hin_Deva, field: text, id_field: id, tokens: 2000000}
+
+  # --- Code : 15M  (gated: accept the terms on the HF dataset page) ---------
+  - {label: code_python,     path: bigcode/the-stack-smol, data_dir: data/python,     field: content, tokens: 3000000}
+  - {label: code_javascript, path: bigcode/the-stack-smol, data_dir: data/javascript, field: content, tokens: 2000000}
+  - {label: code_java,       path: bigcode/the-stack-smol, data_dir: data/java,       field: content, tokens: 2000000}
+  - {label: code_cpp,        path: bigcode/the-stack-smol, data_dir: data/c++,        field: content, tokens: 2000000}
+  - {label: code_go,         path: bigcode/the-stack-smol, data_dir: data/go,         field: content, tokens: 1500000}
+  - {label: code_rust,       path: bigcode/the-stack-smol, data_dir: data/rust,       field: content, tokens: 1500000}
+  - {label: code_shell,      path: bigcode/the-stack-smol, data_dir: data/shell,      field: content, tokens: 1000000}
+  - {label: code_sql,        path: bigcode/the-stack-smol, data_dir: data/sql,        field: content, tokens: 1000000}
+  - {label: code_html,       path: bigcode/the-stack-smol, data_dir: data/html,       field: content, tokens: 1000000}
+
+  # --- Math : 10M ------------------------------------------------------------
+  - {label: math, path: HuggingFaceTB/finemath, name: finemath-4plus, field: text, tokens: 10000000}
+
+  # --- Chat (Gemma chat template) : 15M -------------------------------------
+  - {label: chat, path: HuggingFaceH4/ultrachat_200k, split: train_sft, field: messages, id_field: prompt_id, format: chat, tokens: 15000000}

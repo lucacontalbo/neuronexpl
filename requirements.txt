@@ -1,0 +1,16 @@
+# Tested with: torch 2.14.1, transformers 5.20.1, datasets 5.1.0, pandas 3.0.6, pyarrow 26.0.0, numpy 2.5.4, PyYAML 6.0.3
+# On a GPU machine install the CUDA build of torch (e.g. from https://download.pytorch.org/whl/cu128).
+torch>=2.1            # torch.load(mmap=True)
+# Optional, Qwen3.5 on GPU only: fast kernels for its linear-attention layers (otherwise a slow torch fallback is used)
+# flash-linear-attention
+# causal-conv1d
+transformers>=5.2     # Gemma 3 and Qwen3.5 support
+datasets>=3.0
+pandas>=2.0
+pyarrow>=14.0
+numpy
+pyyaml
+openai
+timeout_decorator
+dotenv
+accelerate
