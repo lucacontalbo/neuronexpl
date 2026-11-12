@@ -46,3 +46,18 @@ Inspect a neuron or a single link:
 python show.py --corpus_dir $CORPUS_DIR --tokenizer $MODEL_PATH --map_dir $MAP_DIR --layer 12 --neuron 345 --list top_neg_neg -n 10
 python show.py --corpus_dir $CORPUS_DIR --tokenizer $MODEL_PATH --doc 81234 --pos 77
 ```
+
+# Neuron-guided perturbation (`run.py`)
+Pushes a classifier (an LLM mapped above) toward `--target_label` by having a perturber LLM (OpenAI API, key in `.env`)
+edit the input, using only the patterns of the classifier's neurons. Ground truth is never used.
+```bash
+python run.py --task asap2 --model Qwen/Qwen3.5-0.8B --map_dir $MAP_DIR --corpus_dir $CORPUS_DIR \
+    --target_label 6 --k 3 --n_iter 5 --output results/qwen_t6.csv
+```
+- Neuron search (`neuron_search.py`): `S = g·(a* − a)`, pooled over the text tokens (`--pooling max|mean|topk`), ranked
+  across layers, then re-ranked by the real ΔJ when patched to a* (`--no_causal_check` to skip). `--use_negative` also lowers neurons.
+- Ablations: `--strategy negative` (most negative S) and `--strategy random`.
+- The first run computes a* for every neuron and caches it in `$MAP_DIR/a_star_top10.pt`.
+- Output columns: `id, perturbed_text, n_iterations, neurons, original_score, final_score, neuron_trace, score_trace`
+  (the traces are JSON lists, one element per iteration).
+- New task: add `tasks/<name>.py` and register it in `tasks/__init__.py`.

@@ -1,0 +1,11 @@
+"""Tasks. A task is a class built from the command-line args, with:
+  labels            list of label strings; each must be a single token for the classifier's tokenizer
+  description       one sentence describing the task, shown to the perturber
+  data_path         default dataset path
+  load(path)        DataFrame with at least the columns "id" and "text" (the part the perturber edits)
+  messages(row, text)   chat messages for the classifier; `text` must appear in them verbatim
+To add a task: write tasks/<name>.py and register it below.
+"""
+from tasks.asap2 import ASAP2
+
+TASKS = {"asap2": ASAP2}
