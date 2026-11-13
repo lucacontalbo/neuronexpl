@@ -47,6 +47,8 @@ def get_args():
     ap.add_argument("--pooling", default="max", choices=["max", "mean", "topk"], help="pooling of S over the text tokens")
     ap.add_argument("--pool_topk", type=int, default=5, help="positions averaged by --pooling topk")
     ap.add_argument("--causal_candidates", type=int, default=50, help="candidates re-ranked by patching them to a*")
+    ap.add_argument("--candidates_per_layer", type=int, default=2,
+                    help="causal check candidates = top-N by S of every layer (0 = global top --causal_candidates)")
     ap.add_argument("--no_causal_check", action="store_true", help="rank by S only")
     ap.add_argument("--n_contexts", type=int, default=10)
     ap.add_argument("--context_before", type=int, default=120)
@@ -110,7 +112,8 @@ def main():
     clf = Classifier(args.model, task.labels, getattr(torch, args.dtype), device)
     neuron_map = NeuronMap(args.map_dir, args.corpus_dir, clf.tok, clf.n_layers, clf.d_ff, args.a_star_n)
     search = NeuronSearch(clf, neuron_map, args.strategy, args.use_negative, args.pooling, args.pool_topk,
-                          0 if args.no_causal_check else args.causal_candidates, args.seed)
+                          0 if args.no_causal_check else args.causal_candidates, args.seed,
+                          candidates_per_layer=args.candidates_per_layer)
     perturber = Perturber(args.perturber_model, args.perturber_base_url)
 
     for i, row in df.iterrows():

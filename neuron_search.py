@@ -85,9 +85,10 @@ class NeuronMap:
 
 class NeuronSearch:
     def __init__(self, classifier, neuron_map, strategy="gradient", use_negative=False, pooling="max", pool_topk=5,
-                 causal_candidates=50, seed=0):
+                 causal_candidates=50, seed=0, candidates_per_layer=2):
         self.clf, self.strategy, self.pooling, self.pool_topk = classifier, strategy, pooling, pool_topk
         self.causal_candidates = causal_candidates  # 0 = no causal check, rank by S only
+        self.candidates_per_layer = candidates_per_layer  # >0: the causal check gets the top-N by S of every layer
         self.directions = ["+", "-"] if use_negative else ["+"]
         self.a_star = {d: v.to(classifier.device) for d, v in neuron_map.a_star.items()}
         self.rng = torch.Generator().manual_seed(seed)
@@ -105,11 +106,18 @@ class NeuronSearch:
         best, best_dir = torch.stack([self._pool(score(d)) for d in self.directions]).max(0)  # [L, d_ff]
         for layer, index in used:
             best[layer, index] = float("-inf")
-        values, flat = best.flatten().topk(self.causal_candidates or k)
+        if self.causal_candidates and self.candidates_per_layer:
+            # stratified pool: the scale of S differs by layer, so a global top-N comes from the first layers only;
+            # the causal check (real dJ, same units for every layer) then decides between layers
+            values, idx = best.topk(min(self.candidates_per_layer, best.shape[1]), dim=1)  # [L, N]
+            flat = idx + torch.arange(best.shape[0], device=idx.device)[:, None] * best.shape[1]
+            values, flat = values.flatten(), flat.flatten()
+        else:
+            values, flat = best.flatten().topk(self.causal_candidates or k)
         candidates = []
         for value, i in zip(values.tolist(), flat.tolist()):
             if value == float("-inf"):
-                break
+                continue
             layer, index = divmod(i, best.shape[1])
             d = self.directions[best_dir[layer, index]]
             candidates.append(Neuron(layer, index, d, self.a_star[d][layer, index].item()))
