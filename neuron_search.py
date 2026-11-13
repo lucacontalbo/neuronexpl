@@ -144,8 +144,7 @@ class NeuronSearch:
             return s.argmax().view(1)
         if self.pooling == "topk":
             return s.topk(min(self.pool_topk, len(s))).indices
-        positive = (s > 0).nonzero()[:, 0]
-        return positive if len(positive) else s.argmax().view(1)
+        return torch.arange(len(s), device=s.device)  # mean: S was averaged over all text tokens, patch them all
 
     def _random(self, k, used):
         ok = self.a_star["+"].isfinite().cpu()
