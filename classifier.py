@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import partial
 
 import torch
-from transformers import AutoModelForImageTextToText, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText, AutoTokenizer
 
 
 @dataclass
@@ -25,7 +25,9 @@ class State:
 class Classifier:
     def __init__(self, model_path, labels, dtype=torch.float32, device="cpu"):
         self.tok = AutoTokenizer.from_pretrained(model_path)
-        self.model = AutoModelForImageTextToText.from_pretrained(model_path, dtype=dtype, attn_implementation="sdpa").to(device).eval()
+        multimodal = hasattr(AutoConfig.from_pretrained(model_path), "vision_config")  # text-only models: CausalLM
+        cls = AutoModelForImageTextToText if multimodal else AutoModelForCausalLM
+        self.model = cls.from_pretrained(model_path, dtype=dtype, attn_implementation="sdpa").to(device).eval()
         self.model.requires_grad_(False)
         self.device = device
         self.layers = self.model.get_decoder().layers
@@ -58,7 +60,7 @@ class Classifier:
     def encode(self, messages, text):
         """Token ids of the chat prompt, and the positions of the tokens lying inside `text`."""
         chat = self.tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-        start = chat.find(text)
+        start = chat.rfind(text)  # last occurrence: the tasks put the edited text after the rest of the input
         assert start >= 0, "the text is not in the prompt"
         enc = self.tok(chat, add_special_tokens=False, return_offsets_mapping=True, return_tensors="pt")
         a, b = enc["offset_mapping"][0].T

@@ -5,20 +5,24 @@
 """
 import argparse
 import json
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 from transformers import AutoTokenizer
 
 
+@lru_cache(maxsize=None)
+def load_layer(map_dir, layer, name):
+    """[d_ff, K] records (doc_id, pos, activation) of one list of one layer (memory-mapped: only what is used is read)."""
+    return np.load(f"{map_dir}/layer_{layer:02d}/{name}.npy", mmap_mode="r")
+
+
 def load_list(map_dir, layer, neuron, name):
-    """[(doc_id, pos, activation)] of one neuron list, csv or npy."""
-    path = f"{map_dir}/layer_{layer:02d}/neuron_{neuron:05d}/{name}"
-    try:
-        rec = np.load(path + ".npy")
-    except FileNotFoundError:
-        rec = pd.read_csv(path + ".csv").to_records()
-    return list(zip(rec["doc_id"].tolist(), rec["pos"].tolist(), rec["activation"].tolist()))
+    """[(doc_id, pos, activation)] of one list of one neuron, strongest first."""
+    records = load_layer(map_dir, layer, name)[neuron]
+    records = records[records["doc_id"] >= 0]  # drop the empty slots
+    return list(zip(records["doc_id"].tolist(), records["pos"].tolist(), records["activation"].tolist()))
 
 
 def main():

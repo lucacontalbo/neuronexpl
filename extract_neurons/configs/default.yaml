@@ -1,5 +1,6 @@
-# Corpus for neuron mapping (~100M tokens total). Model-independent: the same file
-# works for Gemma 3 and Qwen3.5, but each model needs its own corpus dir (tokenizer-specific).
+# "default" corpus for neuron mapping: general text (~100M tokens total). Model-independent: the same file
+# works for every model, but each model needs its own corpus dir (tokenizer-specific).
+# Other maps (e.g. persuasion, bias) get their own configs/<map_name>.yaml.
 # Each source is streamed from the HF Hub, tokenized with the model tokenizer and split
 # into windows of `max_len` tokens (BOS included, if the model has one).
 # `tokens` is the per-source budget.

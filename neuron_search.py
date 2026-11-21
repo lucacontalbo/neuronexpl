@@ -13,15 +13,15 @@ Strategies: "gradient" (above), "negative" (ablation: the neurons with the most 
 predicted to push away from the target), "random" (ablation: random neurons, raised).
 """
 import json
-import multiprocessing
 import os
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 import torch
 
-from extract_neurons.show import load_list
+from extract_neurons.show import load_layer, load_list
 
 LISTS = {"+": "top_pos_pos", "-": "bottom_mixed"}  # where a* and the contexts of each direction come from
 
@@ -38,28 +38,26 @@ class Neuron:
         return f"{self.layer}:{self.index}"
 
 
-def _a_star_layer(map_dir, layer, d_ff, n):
-    """[2, d_ff] mean of the n strongest activations of each list (nan if the list is empty)."""
-    out = torch.full((2, d_ff), float("nan"))
-    for f in range(d_ff):
-        for i, name in enumerate(LISTS.values()):
-            acts = [a for _, _, a in load_list(map_dir, layer, f, name)[:n]]
-            if acts:
-                out[i, f] = sum(acts) / len(acts)
-    return out
+def _a_star(map_dir, n_layers, n):
+    """[2, L, d_ff]: for each direction, the mean of the n strongest activations of every neuron (nan if empty)."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # empty list: the mean of nothing is nan
+        return torch.tensor(np.array([
+            [np.nanmean(load_layer(map_dir, layer, name)["activation"][:, :n], axis=1, dtype=np.float64)
+             for layer in range(n_layers)]
+            for name in LISTS.values()
+        ]), dtype=torch.float32)
 
 
 class NeuronMap:
     """a* of every neuron and the top contexts of a neuron, from the output of extract_neurons/."""
 
-    def __init__(self, map_dir, corpus_dir, tokenizer, n_layers, d_ff, a_star_n=10, workers=8):
+    def __init__(self, map_dir, corpus_dir, tokenizer, n_layers, d_ff, a_star_n=10):
         self.map_dir, self.tok = map_dir, tokenizer
         cache = f"{map_dir}/a_star_top{a_star_n}.pt"
         if not os.path.exists(cache):
             print(f"computing a* from {map_dir} (once, cached in {cache})", flush=True)
-            with multiprocessing.Pool(workers) as pool:
-                layers = pool.starmap(_a_star_layer, [(map_dir, l, d_ff, a_star_n) for l in range(n_layers)])
-            torch.save(torch.stack(layers, 1), f"{cache}.{os.getpid()}.tmp")
+            torch.save(_a_star(map_dir, n_layers, a_star_n), f"{cache}.{os.getpid()}.tmp")
             os.replace(f"{cache}.{os.getpid()}.tmp", cache)  # atomic: parallel jobs may compute it at the same time
         a_star = torch.load(cache)  # [2, L, d_ff]
         assert a_star.shape[1:] == (n_layers, d_ff), "the neuron map does not match the model"

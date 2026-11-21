@@ -1,45 +1,50 @@
-# Neuron map of gated-MLP LLMs — how to run
+# Neuron maps (`extract_neurons/`) — how to run
 
-Supported: `google/gemma-3-4b-it` (GeGLU) and `Qwen/Qwen3.5-0.8B` (SwiGLU). The model is chosen by `MODEL_PATH` only.
-Each model needs its **own** `CORPUS_DIR`, `PARTIALS_DIR`, `MAP_DIR` (token ids depend on the tokenizer).
+Models: dense gated-MLP LLMs (Gemma 3, Qwen3.5, Mistral 3 / Ministral 3). A map is identified by the model and a
+map name (`default` = general corpus; other names, e.g. `persuasion`, `bias`, use other corpora):
+```
+mappings/<MODEL_NAME>/<MAP_NAME>/corpus/   prepare_corpus.py output (configs/<MAP_NAME>.yaml, tokenized for the model)
+mappings/<MODEL_NAME>/<MAP_NAME>/map/      merge_and_export.py output
+$SCRATCH/neuronmap/<MODEL_NAME>/<MAP_NAME>/partials/   collect.py checkpoints
+```
+The sbatch files build these paths from `MODEL_NAME` (folder name of the model in `MODELS_DIR`) and `MAP_NAME`.
 
 ## 0. One-time setup
-- Conda env with the packages in `requirements.txt` (`pip install -r requirements.txt` inside the env).
+- Conda env with the packages in `requirements.txt`.
 - Accept the terms of `bigcode/the-stack-smol` on Hugging Face (gated) and have an `HF_TOKEN`.
-- In `slurm/*.sbatch` fill the `<...>` placeholders: `--account`, `CONDA_ENV`, `MODEL_PATH`, and paths if needed.
-- `mkdir -p logs` and submit everything from the repo root.
+- Check `MODELS_DIR`, `MAPPINGS_DIR` and `--account` in `extract_neurons/slurm/*.sbatch`.
+- `cd extract_neurons && mkdir -p logs`: submit everything from there.
 
 ## 1. Corpus (needs internet)
 ```bash
-sbatch slurm/prepare_corpus.sbatch      # partition lrd_all_serial (has internet)
+MODEL_NAME=gemma-3-4b-it MAP_NAME=default sbatch slurm/prepare_corpus.sbatch
 ```
-Sources/budgets: `configs/corpus.yaml` (~100M tokens). Documents are split into 1024-token windows:
-BOS + 1023 tokens for Gemma, 1024 tokens with no prefix for Qwen (which has no BOS).
-The first token of each window and chat-template tokens are never ranked (`mask.bin`).
-Output in `CORPUS_DIR`: `tokens.bin`, `mask.bin`, `windows.parquet`, `meta.json`.
+Sources/budgets: `configs/default.yaml` (~100M tokens). Documents are split into 1024-token windows
+(BOS + 1023 tokens if the tokenizer has a BOS, else 1024 tokens). The first token of each window and chat-template
+tokens are never ranked (`mask.bin`). Output: `tokens.bin`, `mask.bin`, `windows.parquet`, `meta.json`.
 
-## 2. Collect activations (offline, 1 node × 4 A100)
+## 2. Collect activations (offline)
 ```bash
-sbatch slurm/collect.sbatch
+MODEL_NAME=gemma-3-4b-it sbatch slurm/collect.sbatch                       # small: 4 tasks x 1 GPU
+MODEL_NAME=gemma-3-27b-it GPUS_PER_RANK=2 sbatch --ntasks-per-node=2 --mem=200G slurm/collect.sbatch   # 24-27B
 ```
-Checkpoints every 60 min to `PARTIALS_DIR`. If the job stops, resubmit the same script (same number of tasks): it resumes.
-Check throughput in `logs/nm-collect-*.out` (`tok/s`).
+Checkpoints every 60 min. If the job stops, resubmit the same command: it resumes.
+Throughput in `logs/nm-collect-*.out` (`tok/s`).
 
 ## 3. Merge + export
 ```bash
-sbatch --dependency=afterok:<COLLECT_JOBID> slurm/merge.sbatch
+MODEL_NAME=gemma-3-4b-it sbatch --dependency=afterok:<COLLECT_JOBID> slurm/merge.sbatch
 ```
-~1.04M files for Gemma (348,160 neurons × 3; Qwen3.5-0.8B: 86,016 neurons, ~258k files): check the inode quota first (`cindata`). `FORMAT=npy` is ~2.5× smaller than csv.
 
 ## Output
 ```
-MAP_DIR/layer_XX/neuron_NNNNN/top_pos_pos.csv    gate>0, up>0      highest first
-MAP_DIR/layer_XX/neuron_NNNNN/top_neg_neg.csv    gate<0, up<0      highest first
-MAP_DIR/layer_XX/neuron_NNNNN/bottom_mixed.csv   opposite signs    most negative first
+map/layer_XX/top_pos_pos.npy    gate>0, up>0      highest first
+map/layer_XX/top_neg_neg.npy    gate<0, up<0      highest first
+map/layer_XX/bottom_mixed.npy   opposite signs    most negative first
 ```
-Rows: `rank,doc_id,pos,activation`, top/bottom 1000. Activation = `act(gate_proj(x)) * up_proj(x)` (input of `down_proj`; act = GELU for Gemma, SiLU for Qwen).
+Each file is an array `[d_ff, K=1000]` of records `(doc_id, pos, activation)`: row = neuron, column = rank; empty slots
+have `doc_id = -1`. Activation = `act(gate_proj(x)) * up_proj(x)` (the input of `down_proj`).
 `pos` = token index inside the tokenized document `doc_id`, so same `doc_id` = same input.
-Window = `pos // body`, with `body` = 1023 (Gemma) or 1024 (Qwen).
 
 Inspect a neuron or a single link:
 ```bash
