@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from functools import partial
 
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText
+
+from extract_neurons.model_tokenizer import chat_text, load_tokenizer
 
 
 @dataclass
@@ -51,8 +53,8 @@ def load_model(model_path, dtype, gpus):
 
 
 class Classifier:
-    def __init__(self, model_path, labels, dtype=torch.float32, gpus=1):
-        self.tok = AutoTokenizer.from_pretrained(model_path)
+    def __init__(self, model_path, labels, dtype=torch.bfloat16, gpus=1):
+        self.tok = load_tokenizer(model_path)
         self.model = load_model(model_path, dtype, gpus).eval()
         self.model.requires_grad_(False)
         self.decoder = self.model.get_decoder()
@@ -101,7 +103,7 @@ class Classifier:
 
     def encode(self, messages, text):
         """Token ids of the chat prompt, and the positions of the tokens lying inside `text`."""
-        chat = self.tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        chat = chat_text(self.tok, messages, add_generation_prompt=True, enable_thinking=False)
         start = chat.rfind(text)  # last occurrence: the tasks put the edited text after the rest of the input
         assert start >= 0, "the text is not in the prompt"
         enc = self.tok(chat, add_special_tokens=False, return_offsets_mapping=True, return_tensors="pt")

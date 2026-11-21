@@ -9,7 +9,6 @@ from functools import lru_cache
 
 import numpy as np
 import pandas as pd
-from transformers import AutoTokenizer
 
 
 @lru_cache(maxsize=None)
@@ -40,7 +39,8 @@ def main():
     ap.add_argument("--after", type=int, default=10, help="tokens shown after it")
     args = ap.parse_args()
 
-    tok = AutoTokenizer.from_pretrained(args.tokenizer)
+    from model_tokenizer import load_tokenizer  # here, not at the top: neuron_search.py imports this file as a module
+    tok = load_tokenizer(args.tokenizer)
     meta = json.load(open(f"{args.corpus_dir}/meta.json"))
     prefix = meta["prefix_len"]  # 1 if windows start with BOS, else 0
     body = meta["max_len"] - prefix  # document tokens per window

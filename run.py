@@ -31,7 +31,7 @@ def get_args():
     ap.add_argument("--source_texts_dir", default="data/asap2/source_texts")
     # models
     ap.add_argument("--model", required=True, help="classifier (HF name or local path)")
-    ap.add_argument("--dtype", default="float32", help="bfloat16 for the 24-27B models")
+    ap.add_argument("--dtype", default="bfloat16", help="weights dtype (the label logits are always float32)")
     ap.add_argument("--gpus", type=int, default=1, help="GPUs the classifier is split over (2 for the 24-27B models)")
     ap.add_argument("--perturber_model", default="gpt-5-mini", help="model name (for vLLM: its --served-model-name)")
     ap.add_argument("--perturber_base_url", help="OpenAI-compatible server, e.g. vLLM: http://127.0.0.1:8000/v1 (default: OpenAI API)")

@@ -23,7 +23,8 @@ import numpy as np
 import pandas as pd
 import yaml
 from datasets import load_dataset
-from transformers import AutoTokenizer
+
+from model_tokenizer import chat_text, load_tokenizer
 
 
 def encode(row, src, tok):
@@ -34,7 +35,7 @@ def encode(row, src, tok):
     # Chat: only tokens lying entirely inside a message's content are rankable,
     # template tokens (turn markers, roles, newlines, Qwen's empty <think></think>) are not.
     messages = row[src["field"]]
-    text = tok.apply_chat_template(messages, tokenize=False).removeprefix(tok.bos_token or "")
+    text = chat_text(tok, messages).removeprefix(tok.bos_token or "")
     enc = tok(text, add_special_tokens=False, return_offsets_mapping=True)
     in_content = np.zeros(len(text) + 1, dtype=bool)
     start = 0
@@ -57,7 +58,7 @@ def main():
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
-    tok = AutoTokenizer.from_pretrained(args.tokenizer)
+    tok = load_tokenizer(args.tokenizer)
     prefix = [] if tok.bos_token_id is None else [tok.bos_token_id]
     body = cfg["max_len"] - len(prefix)  # document tokens per window
     os.makedirs(args.out_dir, exist_ok=True)

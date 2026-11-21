@@ -6,7 +6,7 @@
 #   2 random = --strategy random     (ablation)
 # Resumable: resubmitting skips the samples already in the output csv.
 # Submit from the repo root: sbatch slurm/perturb.sbatch
-# Medium defenders (24-27B): DEFENDER_GPUS="1,2", --dtype bfloat16 in EXTRA_ARGS, and --gres=gpu:3
+# Medium defenders (14-31B): DEFENDER_GPUS="1,2" and --gres=gpu:3. All defenders run in bfloat16 (run.py default).
 #SBATCH --account=IscrC_VEC-ATCK
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=24:00:00
@@ -40,7 +40,7 @@ TARGET_LABEL=6
 K=3                    # new neurons per iteration
 N_ITER=5               # max perturbation rounds per sample
 LIMIT="500"            # test only the first N samples; empty = all
-EXTRA_ARGS="--include_source_text --dtype bfloat16"          # e.g. "--include_source_text" or "--use_negative"
+EXTRA_ARGS="--include_source_text"   # e.g. "--include_source_text" (asap2 only) or "--use_negative"
 VLLM_GPU=0             # GPU of the attacker (vLLM), index within the job's allocation
 DEFENDER_GPUS="1"      # GPU(s) of the defender (run.py): "1" for small models, "1,2" for 24-27B models
 # ---------------------

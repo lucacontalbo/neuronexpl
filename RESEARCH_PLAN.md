@@ -8,12 +8,12 @@ taken from a neuron map (top-activating contexts over a reference corpus).
 
 ## Setup
 
-**Judges** (open-weight, instruction-tuned, dense; 3 families × 2 sizes)
+**Judges** (open-weight, instruction-tuned, dense; 3 recent families × 2 sizes)
 
 | size | Qwen | Gemma | Mistral |
 |---|---|---|---|
-| small | Qwen3.5-0.8B | gemma-3-4b-it | Ministral-3-3B-Instruct-2512 |
-| medium (14–40B) | Qwen3.5-27B | gemma-3-27b-it | Mistral-Small-3.2-24B-Instruct-2506 |
+| small | Qwen3.5-0.8B | gemma-4-E4B-it | Ministral-3-3B-Instruct-2512 (BF16) |
+| medium (14–40B) | Qwen3.5-27B | gemma-4-31B-it | Ministral-3-14B-Instruct-2512 (BF16) |
 
 Large (>100B) models are left out: the available ones are MoE, where a neuron exists only on the tokens routed to
 its expert, which the neuron search and the map do not support.
