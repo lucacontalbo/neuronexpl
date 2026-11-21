@@ -1,11 +1,12 @@
 #!/bin/bash
-# Neuron-guided perturbation of ASAP 2.0 essays: defender Qwen3.5-0.8B (transformers, gradients + hooks) on GPU 1,
-# attacker gpt-oss-20b served by vLLM on GPU 0. One array task per neuron strategy:
+# Neuron-guided perturbation of the samples of $TASK: defender $DEFENDER_NAME (transformers, gradients + hooks) on
+# the GPUs $DEFENDER_GPUS, attacker gpt-oss-20b served by vLLM on GPU 0. One array task per neuron strategy:
 #   0 best   = --strategy gradient   (highest S, causal check)
 #   1 worst  = --strategy negative   (most negative S: ablation)
 #   2 random = --strategy random     (ablation)
-# Resumable: resubmitting skips the essays already in the output csv.
+# Resumable: resubmitting skips the samples already in the output csv.
 # Submit from the repo root: sbatch slurm/perturb.sbatch
+# Medium defenders (24-27B): DEFENDER_GPUS="1,2", --dtype bfloat16 in EXTRA_ARGS, and --gres=gpu:3
 #SBATCH --account=IscrC_VEC-ATCK
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=24:00:00
@@ -30,17 +31,18 @@ SINGULARITY_IMAGE="/leonardo_work/IscrC_CFXBench/mcontalb/mtqaautogen/containers
 BIND_DIR="/leonardo_work/IscrC_VEC-ATCK/mcontalb"             # must contain the attacker model
 MODELS_DIR="/leonardo_work/IscrC_VEC-ATCK/mcontalb/hf_models"
 MAPPINGS_DIR="/leonardo_work/IscrC_VEC-ATCK/mcontalb/neuronexpl/mappings"   # extract_neurons/ output
+TASK="asap2"                   # asap2, biggen or judgebench
 DEFENDER_NAME="Qwen3.5-0.8B"   # folder name in MODELS_DIR and MAPPINGS_DIR
 MAP_NAME="default"             # which neuron map of the defender: MAPPINGS_DIR/DEFENDER_NAME/MAP_NAME
 ATTACKER_PATH="$MODELS_DIR/gpt-oss-20b"
 ATTACKER_NAME="gpt-oss-20b"
 TARGET_LABEL=6
 K=3                    # new neurons per iteration
-N_ITER=5               # max perturbation rounds per essay
-LIMIT="500"               # test only the first N essays, e.g. LIMIT=500; empty = all 7421
+N_ITER=5               # max perturbation rounds per sample
+LIMIT="500"            # test only the first N samples; empty = all
 EXTRA_ARGS="--include_source_text --dtype bfloat16"          # e.g. "--include_source_text" or "--use_negative"
 VLLM_GPU=0             # GPU of the attacker (vLLM), index within the job's allocation
-DEFENDER_GPU=1         # GPU of the defender (run.py)
+DEFENDER_GPUS="1"      # GPU(s) of the defender (run.py): "1" for small models, "1,2" for 24-27B models
 # ---------------------
 
 DEFENDER_PATH="$MODELS_DIR/$DEFENDER_NAME"
@@ -51,7 +53,7 @@ strategies=(gradient negative random)
 names=(best worst random)
 strategy=${strategies[$SLURM_ARRAY_TASK_ID]}
 name=${names[$SLURM_ARRAY_TASK_ID]}
-out="asap2_qwen3.5-0.8b_${ATTACKER_NAME}_t${TARGET_LABEL}_k${K}_n${N_ITER}_${name}"
+out="${TASK}_${DEFENDER_NAME}_${MAP_NAME}_${ATTACKER_NAME}_t${TARGET_LABEL}_k${K}_n${N_ITER}_${name}"
 
 PROJECT_DIR="$SLURM_SUBMIT_DIR"
 cd "$PROJECT_DIR"
@@ -100,7 +102,7 @@ trap cleanup EXIT
 
 mkdir -p ./outputs/vllm ./outputs/perturb ./results
 
-# vLLM has GPU $VLLM_GPU to itself; the defender gets all of GPU $DEFENDER_GPU (forward + backward passes).
+# vLLM has GPU $VLLM_GPU to itself; the defender gets all of GPU(s) $DEFENDER_GPUS (forward + backward passes).
 echo "Starting vLLM..."
 CUDA_VISIBLE_DEVICES="$VLLM_GPU" SINGULARITYENV_CUDA_VISIBLE_DEVICES="$VLLM_GPU" singularity exec --nv \
     --bind "$BIND_DIR:$BIND_DIR" \
@@ -146,9 +148,11 @@ if ! curl -fsS "http://${HOST}:${PORT}/v1/models" | grep -q "\"${ATTACKER_NAME}\
     exit 1
 fi
 
-CUDA_VISIBLE_DEVICES="$DEFENDER_GPU" PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+N_DEFENDER_GPUS=$(echo "$DEFENDER_GPUS" | tr ',' '\n' | wc -l)
+CUDA_VISIBLE_DEVICES="$DEFENDER_GPUS" PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 "$python" run.py \
-    --task asap2 \
+    --task "$TASK" \
+    --gpus "$N_DEFENDER_GPUS" \
     --model "$DEFENDER_PATH" \
     --map_dir "$MAP_DIR" \
     --corpus_dir "$CORPUS_DIR" \

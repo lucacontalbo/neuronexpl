@@ -96,12 +96,15 @@ class NeuronSearch:
         if self.strategy == "random":
             return self._random(k, used)
         orient = 1 if self.strategy == "gradient" else -1  # "negative": rank by -S
-        grads, acts = self.clf.gradients(state, target, current), state.activations()
+        grads = self.clf.gradients(state, target, current)  # per layer [P, d_ff], on the GPU of the layer
 
-        def score(d):  # [L, P, d_ff] oriented S
-            return (orient * grads * (self.a_star[d][:, None] - acts)).nan_to_num(nan=float("-inf"))
-
-        best, best_dir = torch.stack([self._pool(score(d)) for d in self.directions]).max(0)  # [L, d_ff]
+        # pooled S of every neuron, one layer at a time (a [L, P, d_ff] tensor would not fit for large models)
+        pooled = []  # per layer [n_directions, d_ff]
+        for layer, g in enumerate(grads):
+            acts = state.layer_activations(layer)
+            pooled.append(torch.stack([self._pool(self._score(orient, g, acts, self.a_star[d][layer].to(g.device)))
+                                       for d in self.directions]).to(self.clf.device))
+        best, best_dir = torch.stack(pooled, dim=1).max(0)  # [L, d_ff]: best direction of every neuron
         for layer, index in used:
             best[layer, index] = float("-inf")
         if self.causal_candidates and self.candidates_per_layer:
@@ -126,17 +129,23 @@ class NeuronSearch:
         j0 = self.clf.margin(state, target, current)
         effects = []
         for n in candidates:
-            s = orient * grads[n.layer, :, n.index] * (n.a_star - acts[n.layer, :, n.index])
+            s = orient * grads[n.layer][:, n.index] * (n.a_star - state.neuron_activations(n.layer, n.index))
             patch = [(n.layer, self._positions(s), n.index, n.a_star)]
             effects.append(orient * (self.clf.patched_margin(state, target, current, patch) - j0))
         ranked = sorted(zip(effects, candidates), key=lambda x: -x[0])
         helpful = [n for effect, n in ranked if effect > 0]
         return (helpful or [n for _, n in ranked])[:k]  # if no candidate helps, still take the highest effects
 
-    def pooled_activation(self, acts, neuron):
+    def pooled_activation(self, state, neuron):
         """Activation of the neuron over the text tokens, pooled as in the search ("-": its lowest values)."""
         sign = 1 if neuron.direction == "+" else -1
-        return sign * self._pool(sign * acts[neuron.layer, :, neuron.index, None])[0].item()
+        acts = state.neuron_activations(neuron.layer, neuron.index)
+        return sign * self._pool(sign * acts[:, None])[0].item()
+
+    @staticmethod
+    def _score(orient, grads, acts, a_star):
+        """[P, d_ff] oriented S = g * (a* - a); -inf for the neurons without a* (empty list in the map)."""
+        return (orient * grads * (a_star - acts)).nan_to_num(nan=float("-inf"))
 
     def _pool(self, x):  # [..., P, F] -> [..., F]
         if self.pooling == "max":

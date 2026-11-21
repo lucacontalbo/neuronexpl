@@ -31,7 +31,8 @@ def get_args():
     ap.add_argument("--source_texts_dir", default="data/asap2/source_texts")
     # models
     ap.add_argument("--model", required=True, help="classifier (HF name or local path)")
-    ap.add_argument("--dtype", default="float32")
+    ap.add_argument("--dtype", default="float32", help="bfloat16 for the 24-27B models")
+    ap.add_argument("--gpus", type=int, default=1, help="GPUs the classifier is split over (2 for the 24-27B models)")
     ap.add_argument("--perturber_model", default="gpt-5-mini", help="model name (for vLLM: its --served-model-name)")
     ap.add_argument("--perturber_base_url", help="OpenAI-compatible server, e.g. vLLM: http://127.0.0.1:8000/v1 (default: OpenAI API)")
     # neuron map (extract_neurons/ output for the same model)
@@ -78,10 +79,9 @@ def perturb(row, args, task, clf, search, neuron_map, perturber):
         text = perturber(text, task.description, current, args.target_label, contexts)
         new_state = clf.run(task.messages(row, text), text)
 
-        prev_acts, now_acts = state.activations(), new_state.activations()
         step = {}
         for key, (n, since) in used.items():
-            prev, now = search.pooled_activation(prev_acts, n), search.pooled_activation(now_acts, n)
+            prev, now = search.pooled_activation(state, n), search.pooled_activation(new_state, n)
             gap = n.a_star - prev
             step[key] = {"dir": n.direction, "since": since, "prev": prev, "now": now, "a_star": n.a_star,
                          "gap_closed": (now - prev) / gap if gap else None}
@@ -108,8 +108,7 @@ def main():
         df = df.head(args.limit)
     done = set(pd.read_csv(args.output, usecols=["id"]).id.astype(str)) if os.path.exists(args.output) else set()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    clf = Classifier(args.model, task.labels, getattr(torch, args.dtype), device)
+    clf = Classifier(args.model, task.labels, getattr(torch, args.dtype), args.gpus)
     neuron_map = NeuronMap(args.map_dir, args.corpus_dir, clf.tok, clf.n_layers, clf.d_ff, args.a_star_n)
     search = NeuronSearch(clf, neuron_map, args.strategy, args.use_negative, args.pooling, args.pool_topk,
                           0 if args.no_causal_check else args.causal_candidates, args.seed,
