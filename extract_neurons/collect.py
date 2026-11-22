@@ -55,16 +55,17 @@ class TopK:
 
 
 def load_decoder(model_path, dtype, gpus):
-    """The text decoder of the model on the given GPUs (its layers split evenly over them if more than one)."""
+    """The text decoder of the model on the given GPUs (its layers split evenly over them if more than one).
+    Attention: transformers' default (sdpa where supported, e.g. not in Gemma 4's audio tower, which we do not use)."""
     is_multimodal = hasattr(AutoConfig.from_pretrained(model_path), "vision_config")
     model_class = AutoModelForImageTextToText if is_multimodal else AutoModelForCausalLM
     if len(gpus) == 1:
-        model = model_class.from_pretrained(model_path, dtype=dtype, attn_implementation="sdpa").to(gpus[0])
+        model = model_class.from_pretrained(model_path, dtype=dtype).to(gpus[0])
     else:
         # cap every GPU at ~1/n of the weights, so that device_map="auto" spreads the layers evenly
         weights = sum(os.path.getsize(f"{model_path}/{f}") for f in os.listdir(model_path) if f.endswith(".safetensors"))
         max_memory = {gpu: int(1.15 * weights / len(gpus)) for gpu in gpus}
-        model = model_class.from_pretrained(model_path, dtype=dtype, attn_implementation="sdpa",
+        model = model_class.from_pretrained(model_path, dtype=dtype,
                                             device_map="auto", max_memory=max_memory)
     return model.get_decoder().eval()
 

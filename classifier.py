@@ -37,18 +37,19 @@ class State:
 
 
 def load_model(model_path, dtype, gpus):
-    """The model on `gpus` GPUs (its layers split evenly over them if more than one), or on the cpu if there is none."""
+    """The model on `gpus` GPUs (its layers split evenly over them if more than one), or on the cpu if there is none.
+    Attention: transformers' default (sdpa where supported, e.g. not in Gemma 4's audio tower, which we do not use)."""
     is_multimodal = hasattr(AutoConfig.from_pretrained(model_path), "vision_config")
     model_class = AutoModelForImageTextToText if is_multimodal else AutoModelForCausalLM
     if not torch.cuda.is_available():
-        return model_class.from_pretrained(model_path, dtype=dtype, attn_implementation="sdpa")
+        return model_class.from_pretrained(model_path, dtype=dtype)
     if gpus == 1:
-        return model_class.from_pretrained(model_path, dtype=dtype, attn_implementation="sdpa").to("cuda:0")
+        return model_class.from_pretrained(model_path, dtype=dtype).to("cuda:0")
     # cap every GPU at ~1/n of the weights, so that device_map="auto" spreads the layers evenly
     assert gpus <= torch.cuda.device_count(), f"--gpus {gpus} but {torch.cuda.device_count()} GPUs visible"
     weights = sum(os.path.getsize(f"{model_path}/{f}") for f in os.listdir(model_path) if f.endswith(".safetensors"))
     max_memory = {gpu: int(1.15 * weights / gpus) for gpu in range(gpus)}
-    return model_class.from_pretrained(model_path, dtype=dtype, attn_implementation="sdpa",
+    return model_class.from_pretrained(model_path, dtype=dtype,
                                        device_map="auto", max_memory=max_memory)
 
 
