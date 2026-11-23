@@ -4,9 +4,11 @@
 #   0 best   = --strategy gradient   (highest S, causal check)
 #   1 worst  = --strategy negative   (most negative S: ablation)
 #   2 random = --strategy random     (ablation)
-# Resumable: resubmitting skips the samples already in the output csv.
-# Submit from the repo root: sbatch slurm/perturb.sbatch
-# Medium defenders (14-31B): DEFENDER_GPUS="1,2" and --gres=gpu:3. All defenders run in bfloat16 (run.py default).
+# Resumable: resubmitting the same command skips the samples already in the output csv.
+# Submit from the repo root. The whole grid: bash slurm/submit_grid.sh. One run (the variables below marked
+# "command line" can be set before sbatch; give --gres=gpu:<1 + number of DEFENDER_GPUS>):
+#   TASK=biggen DEFENDER_NAME=Qwen3.5-27B DEFENDER_GPUS=1,2 TARGET_LABEL=5 sbatch --gres=gpu:3 slurm/perturb.sbatch
+# Only one strategy, e.g. random: add --array=2. All defenders run in bfloat16 (run.py default).
 #SBATCH --account=IscrC_VEC-ATCK
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=24:00:00
@@ -31,18 +33,19 @@ SINGULARITY_IMAGE="/leonardo_work/IscrC_CFXBench/mcontalb/mtqaautogen/containers
 BIND_DIR="/leonardo_work/IscrC_VEC-ATCK/mcontalb"             # must contain the attacker model
 MODELS_DIR="/leonardo_work/IscrC_VEC-ATCK/mcontalb/hf_models"
 MAPPINGS_DIR="/leonardo_work/IscrC_VEC-ATCK/mcontalb/neuronexpl/mappings"   # extract_neurons/ output
-TASK="asap2"                   # asap2, biggen or judgebench
-DEFENDER_NAME="Qwen3.5-0.8B"   # folder name in MODELS_DIR and MAPPINGS_DIR
-MAP_NAME="default"             # which neuron map of the defender: MAPPINGS_DIR/DEFENDER_NAME/MAP_NAME
+TASK=${TASK:-asap2}                         # command line: asap2, biggen or judgebench
+DEFENDER_NAME=${DEFENDER_NAME:-Qwen3.5-0.8B}  # command line: folder name in MODELS_DIR and MAPPINGS_DIR
+MAP_NAME=${MAP_NAME:-default}               # command line: neuron map of the defender, MAPPINGS_DIR/DEFENDER_NAME/MAP_NAME
 ATTACKER_PATH="$MODELS_DIR/gpt-oss-20b"
 ATTACKER_NAME="gpt-oss-20b"
-TARGET_LABEL=6
+TARGET_LABEL=${TARGET_LABEL:-6}             # command line: one of the task's labels
+DEFENDER_GPUS=${DEFENDER_GPUS:-1}           # command line: GPU(s) of the defender, e.g. "1" or "1,2"
 K=3                    # new neurons per iteration
 N_ITER=5               # max perturbation rounds per sample
-LIMIT="500"            # test only the first N samples; empty = all
-EXTRA_ARGS="--include_source_text"   # e.g. "--include_source_text" (asap2 only) or "--use_negative"
+POOLING="mean"         # pooling of S over the text tokens: max, mean or topk
+LIMIT=""               # test only the first N samples; empty = all
+EXTRA_ARGS=""          # e.g. "--use_negative" (asap2 always gets --include_source_text, below)
 VLLM_GPU=0             # GPU of the attacker (vLLM), index within the job's allocation
-DEFENDER_GPUS="1"      # GPU(s) of the defender (run.py): "1" for small models, "1,2" for 24-27B models
 # ---------------------
 
 DEFENDER_PATH="$MODELS_DIR/$DEFENDER_NAME"
@@ -53,7 +56,10 @@ strategies=(gradient negative random)
 names=(best worst random)
 strategy=${strategies[$SLURM_ARRAY_TASK_ID]}
 name=${names[$SLURM_ARRAY_TASK_ID]}
-out="${TASK}_${DEFENDER_NAME}_${MAP_NAME}_${ATTACKER_NAME}_t${TARGET_LABEL}_k${K}_n${N_ITER}_${name}"
+out="${TASK}_${DEFENDER_NAME}_${MAP_NAME}_${ATTACKER_NAME}_t${TARGET_LABEL}_k${K}_n${N_ITER}_${POOLING}_${name}"
+if [[ "$TASK" == "asap2" ]]; then
+    EXTRA_ARGS="--include_source_text $EXTRA_ARGS"
+fi
 
 PROJECT_DIR="$SLURM_SUBMIT_DIR"
 cd "$PROJECT_DIR"
@@ -162,6 +168,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 "$python" run.py \
     --k "$K" \
     --n_iter "$N_ITER" \
     --strategy "$strategy" \
+    --pooling "$POOLING" \
     --seed 0 \
     --output "results/${out}.csv" \
     ${LIMIT:+--limit "$LIMIT"} $EXTRA_ARGS
